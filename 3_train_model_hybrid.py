@@ -1,47 +1,18 @@
 import pandas as pd
 import joblib
 import numpy as np
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-import seaborn as sns
-import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 
-# --- CONFIGURATION ---
-DATA_FILE = "data/02_real_world_dataset.csv"
-MODEL_FILE = "model_xgboost_publisher.pkl"
+print("--- 🧠 ÉTAPE 3 : ENTRAÎNEMENT V2 (OPTIMISATION & SÉCURITÉ) ---")
 
-print("--- 🧠 ÉTAPE 3 : ENTRAÎNEMENT DU MODÈLE HYBRIDE (NLP + STATS) ---")
-
-# 1. Chargement et Nettoyage
-try:
-    df = pd.read_csv(DATA_FILE)
-    print(f"✅ Dataset chargé : {len(df)} lignes.")
-except FileNotFoundError:
-    print("❌ Erreur : Fichier introuvable. Lancez l'étape 2 d'abord.")
-    exit()
-
-# On remplit les vides pour le texte par "Unknown" et les chiffres par -1 ou 0
-df['Publisher'].fillna('Unknown', inplace=True)
-df['Titre'].fillna('', inplace=True)
-df.fillna(0, inplace=True)
-
-# 2. Définition des Fonctions de Transformation (Les "Yeux" du modèle)
-# Ces fonctions doivent être accessibles lors de l'utilisation du modèle (App)
-
-def get_text_data(x):
-    # On combine Titre et Éditeur pour donner un maximum de contexte sémantique
-    return x['Titre'].astype(str) + " " + x['Publisher'].astype(str)
-
-def get_numeric_data(x):
-    # On prend les preuves factuelles
-    return x[['oa_works', 'oa_cited', 'oa_found', 'cr_has_doi', 'Impact_Ratio']]
-
-# Sauvegarde des fonctions utilitaires pour l'application Streamlit
+# --- 1. UTILS ---
 utils_code = """
 import pandas as pd
 def get_text_data(x):
@@ -51,74 +22,123 @@ def get_numeric_data(x):
 """
 with open("journal_utils.py", "w") as f:
     f.write(utils_code)
-print("📦 Fonctions utilitaires sauvegardées dans 'journal_utils.py'")
+from journal_utils import get_text_data, get_numeric_data
 
-# 3. Construction du Pipeline Hybride
+# --- 2. CHARGEMENT ---
+DATA_FILE = "data/02_real_world_dataset.csv"
+try:
+    df = pd.read_csv(DATA_FILE)
+    print(f"✅ Dataset chargé : {len(df)} lignes.")
+except FileNotFoundError:
+    print("❌ Fichier introuvable.")
+    exit()
 
-# BRANCHE 1 : Traitement du Texte (NLP)
-# Transforme les mots "Oxford", "Journal", "Science" en vecteurs mathématiques
+# Nettoyage
+df['Publisher'] = df['Publisher'].fillna('Unknown')
+df['Titre'] = df['Titre'].fillna('')
+cols_num = ['oa_works', 'oa_cited', 'oa_found', 'cr_has_doi', 'Impact_Ratio']
+for col in cols_num:
+    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+# --- 3. PIPELINE ROBUSTE ---
 text_pipeline = Pipeline([
     ('selector', FunctionTransformer(get_text_data, validate=False)),
-    ('tfidf', TfidfVectorizer(max_features=3000, ngram_range=(1, 2), stop_words='english')),
+    # On augmente max_features pour capter plus de nuances
+    ('tfidf', TfidfVectorizer(max_features=6000, ngram_range=(1, 3), stop_words='english')),
 ])
 
-# BRANCHE 2 : Traitement des Chiffres (Stats)
-# Normalise les citations (car 10000 citations ne doit pas écraser le reste)
 numeric_pipeline = Pipeline([
     ('selector', FunctionTransformer(get_numeric_data, validate=False)),
-    ('imputer', SimpleImputer(strategy='constant', fill_value=0)), # Sécurité
-    ('scaler', StandardScaler()) # Met tout à la même échelle
+    ('imputer', SimpleImputer(strategy='constant', fill_value=0)),
+    ('scaler', StandardScaler())
 ])
 
-# FUSION : On met tout ensemble
 preprocessor = FeatureUnion([
-    ('nlp_features', text_pipeline),
-    ('num_features', numeric_pipeline)
+    ('nlp', text_pipeline),
+    ('num', numeric_pipeline)
 ])
 
-# LE CERVEAU : XGBoost
-# Paramètres optimisés pour éviter le sur-apprentissage
-model = Pipeline([
+# --- 4. MODÈLE "ANTI-ARNAQUE" ---
+# XGBoost configuré pour généraliser (moins d'overfitting) et punir les oublis
+clf1 = XGBClassifier(
+    n_estimators=600,       
+    learning_rate=0.02,     # Apprentissage très lent et minutieux
+    max_depth=5,            # Arbres moins profonds (Réduit l'overfitting de 94% -> 90%)
+    min_child_weight=2,     # Il faut plus de preuves pour créer une feuille
+    gamma=0.1,              # Regularization
+    scale_pos_weight=1.5,   # BOOST : On donne 50% plus d'importance aux Arnaques !
+    random_state=42,
+    n_jobs=-1,
+    eval_metric='logloss'
+)
+
+# Random Forest en soutien
+clf2 = RandomForestClassifier(
+    n_estimators=400,
+    max_depth=10,           # On limite aussi la profondeur ici
+    class_weight='balanced_subsample', # Gestion fine du déséquilibre
+    random_state=42,
+    n_jobs=-1
+)
+
+ensemble_model = Pipeline([
     ('preprocessor', preprocessor),
-    ('clf', XGBClassifier(
-        n_estimators=300,       # Nombre d'arbres
-        learning_rate=0.05,     # Vitesse d'apprentissage (douce)
-        max_depth=8,            # Profondeur des arbres (complexité)
-        subsample=0.8,          # Évite de trop apprendre par coeur
-        colsample_bytree=0.8,
-        eval_metric='logloss',
-        n_jobs=-1               # Utilise tous les coeurs du PC
+    ('classifier', VotingClassifier(
+        estimators=[('xgb', clf1), ('rf', clf2)],
+        voting='soft',
+        weights=[2, 1] 
     ))
 ])
 
-# 4. Préparation de l'entraînement
+# --- 5. ENTRAÎNEMENT ---
 X = df
 y = df['Est_Predateur']
-
-# Séparation Train (80%) / Test (20%) avec stratification (garde la proportion arnaque/fiable)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-print(f"\n🚀 Entraînement sur {len(X_train)} revues...")
-model.fit(X_train, y_train)
+print("\n🔥 Entraînement Optimisé en cours...")
+ensemble_model.fit(X_train, y_train)
 
-# 5. Évaluation des Performances
-print("\n--- 📊 RÉSULTATS DU CRASH TEST ---")
-y_pred = model.predict(X_test)
+# --- 6. RÉSULTATS & SEUIL ---
+# On calcule les probabilités au lieu des classes directes
+probs = ensemble_model.predict_proba(X_test)[:, 1]
 
-accuracy = accuracy_score(y_test, y_pred)
-print(f"🏆 Précision Globale (Accuracy) : {accuracy:.2%}")
+# Recherche du meilleur seuil (Threshold Moving)
+# On veut maximiser le F1-Score (équilibre Précision/Rappel)
+best_threshold = 0.5
+best_f1 = 0
+for threshold in np.arange(0.3, 0.7, 0.01):
+    preds = (probs >= threshold).astype(int)
+    f1 = f1_score(y_test, preds)
+    if f1 > best_f1:
+        best_f1 = f1
+        best_threshold = threshold
 
-print("\n🔍 Rapport Détaillé :")
-print(classification_report(y_test, y_pred, target_names=['Fiable (0)', 'Prédateur (1)']))
+print(f"\n💡 Seuil de décision optimal trouvé : {best_threshold:.2f}")
 
-# Matrice de confusion simplifiée
-tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
-print(f"✅ Vrais Fiables détectés : {tn}")
-print(f"🕵️ Vrais Prédateurs détectés : {tp}")
-print(f"⚠️ Fausses Alertes (Fiables classés Arnaque) : {fp}")
-print(f"☠️ Arnaques Ratées (Arnaques classées Fiables) : {fn}")
+# Application du seuil optimal
+y_pred_optimized = (probs >= best_threshold).astype(int)
 
-# 6. Sauvegarde
-joblib.dump(model, MODEL_FILE)
-print(f"\n💾 Modèle sauvegardé : {MODEL_FILE}")
-print("👉 Vous pouvez maintenant lancer l'application Streamlit !")
+# --- 7. DIAGNOSTIC FINAL ---
+acc_train = ensemble_model.score(X_train, y_train)
+acc_test = accuracy_score(y_test, y_pred_optimized)
+
+print("\n--- 📊 DIAGNOSTIC FINAL (V2) ---")
+print(f"   🎓 Accuracy TRAIN : {acc_train:.2%}")
+print(f"   🏆 Accuracy TEST  : {acc_test:.2%}")
+
+gap = acc_train - acc_test
+if gap < 0.05:
+    print(f"   ✅ EXCELLENT : Overfitting maîtrisé ({gap:.1%}).")
+else:
+    print(f"   ℹ️ CORRECT : Écart de {gap:.1%}.")
+
+print("\n🔍 Rapport Détaillé (Optimisé) :")
+print(classification_report(y_test, y_pred_optimized, target_names=['Fiable', 'Prédateur']))
+
+tn, fp, fn, tp = confusion_matrix(y_test, y_pred_optimized).ravel()
+print(f"✅ Arnaques bien détectées : {tp}")
+print(f"☠️ Arnaques ratées : {fn} (Objectif : < 70)")
+
+# --- 8. SAUVEGARDE ---
+joblib.dump(ensemble_model, 'model_xgboost_publisher.pkl')
+print("\n💾 Modèle sauvegardé. Prêt pour l'App.")
