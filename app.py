@@ -10,6 +10,49 @@ from journal_utils import get_text_data, get_numeric_data
 st.set_page_config(page_title="Predatory AI", page_icon="🛡️", layout="centered")
 MODEL_FILE = "model_xgboost_publisher.pkl"
 DATASET_FILE = "data/02_real_world_dataset.csv"  # Le fichier qui nourrit l'IA
+# --- CONFIGURATION DU DESIGN ---
+def local_css():
+    st.markdown("""
+    <style>
+        /* Fond global plus moderne */
+        .stApp {
+            background-color: #f5f7f9;
+        }
+        
+        /* Titres stylisés */
+        h1 {
+            color: #1E3A8A;
+            font-family: 'Helvetica Neue', sans-serif;
+            font-weight: 700;
+        }
+        
+        /* Boîtes de résultat (Cards) */
+        .result-card {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            border-left: 5px solid #3B82F6;
+        }
+        
+        /* Boutons personnalisés */
+        div.stButton > button {
+            background: linear-gradient(45deg, #2563EB, #1D4ED8);
+            color: white;
+            border-radius: 8px;
+            border: none;
+            padding: 10px 24px;
+            transition: all 0.3s ease;
+        }
+        div.stButton > button:hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 15px rgba(37, 99, 235, 0.4);
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+local_css()
 
 # --- FONCTION DE SAUVEGARDE (AUTO-APPRENTISSAGE) ---
 def save_to_knowledge_base(data, label):
