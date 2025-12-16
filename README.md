@@ -1,5 +1,4 @@
-
-#🛡️ Predatory Journals Detector###*Évaluation de la Crédibilité Scientifique par Intelligence Artificielle*Ce projet propose une solution complète (**End-to-End**) conçue pour assister les chercheurs dans l'identification des revues et éditeurs prédateurs. Il combine une architecture de données robuste, de l'intelligence artificielle hybride et des outils de détection en temps réel.
+**🛡️ Predatory Journals Detector** Évaluation de la Crédibilité Scientifique par Intelligence Artificielle*Ce projet propose une solution complète (**End-to-End**) conçue pour assister les chercheurs dans l'identification des revues et éditeurs prédateurs. Il combine une architecture de données robuste, de l'intelligence artificielle hybride et des outils de détection en temps réel.
 
 ---
 
