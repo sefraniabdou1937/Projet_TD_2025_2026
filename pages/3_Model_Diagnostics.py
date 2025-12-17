@@ -132,8 +132,8 @@ plt.grid(alpha=0.3)
 st.pyplot(fig_lc)
 
 # --- 5. RÉSUMÉ POUR LA SOUTENANCE ---
-st.header("4. Synthèse pour la Soutenance")
-with st.expander("Afficher les points clés (Slide 4)", expanded=True):
+st.header("4. Synthèse :  ")
+with st.expander("Afficher les points clés", expanded=True):
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown("""
