@@ -143,7 +143,6 @@ if submit_btn:
             
             if result == "SUCCESS":
                 st.toast("✅ Revue ajoutée avec succès à la base d'entraînement !", icon="💾")
-                st.balloons()
                 st.info(f"La revue a été enregistrée comme **{label_input}**. Elle sera intégrée au prochain ré-entraînement du modèle.")
             elif result == "DUPLICATE":
                 st.error("Cette revue existe déjà dans la base de données.")
