@@ -112,7 +112,7 @@ with col_details:
 # --- 4. COURBE D'APPRENTISSAGE (LA PREUVE SCIENTIFIQUE) ---
 st.header("3. Preuve Scientifique : Courbe d'Apprentissage")
 st.markdown("""
-> **Analyse du Prof :** La pente positive de la courbe verte (Validation) prouve que le modèle 
+>  La pente positive de la courbe verte (Validation) prouve que le modèle 
 > n'a pas encore atteint son plafond de performance.
 """)
 
